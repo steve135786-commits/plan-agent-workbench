@@ -1,0 +1,83 @@
+workflow:
+  version: "0.0.1"
+  id: w2
+  name: CAD-GIS conversion and indicators
+  description: >
+    Convert a residential floor plan DXF to GeoJSON/SHP (layers split by
+    wall / window / door / dimension / axis, following the CAD lecture
+    layering habit), then compute planning indicators. All values below
+    are SYNTHETIC examples for the format demo.
+
+inputs:
+  - name: plan_dxf
+    path: data/plans/sample-residential-plan.dxf
+    kind: dxf
+    required: true
+    note: Synthetic sample plan; the real test case is the 2026-11-06 residential plan.
+  - name: site_boundary
+    path: data/parcels/synthetic-parcel-a.geojson
+    kind: geojson
+    required: false
+    note: Optional site boundary for density/FAR denominators.
+
+parameters:
+  - name: crs
+    value: EPSG:4326
+    unit: code
+    source: workflow default for the demo; set the real project CRS before production runs
+  - name: units
+    value: mm
+    unit: length
+    source: DXF drawing units (R2007 file, 1:100 plot)
+  - name: household_size
+    value: 3.0
+    unit: persons/household
+    source: configurable planning assumption; change per project
+  - name: kernel_bandwidth
+    value: 300
+    unit: m
+    source: kernel density bandwidth for the demo
+
+steps:
+  - id: w2-1
+    kind: deterministic
+    name: Convert DXF to GeoJSON/SHP by layer
+    runs: sidecar.dxf_to_geojson
+    outputs: [plan.geojson, plan.shp]
+  - id: w2-2
+    kind: deterministic
+    name: Compute indicators (density, FAR, green ratio, population density, kernel density)
+    runs: sidecar.compute_indicators
+    outputs: [indicators.csv, run-log.md]
+  - id: w2-3
+    kind: agent
+    name: Review conversion warnings and propose fixes
+    uses: acp-agent
+    outputs: [conversion-review.md]
+  - id: w2-4
+    kind: deterministic
+    name: Write indicator CSV and run log
+    runs: sidecar.write_outputs
+    outputs: [indicators.csv]
+
+outputs:
+  - name: plan_geojson
+    path: out/w2/plan.geojson
+    kind: geojson
+    note: Layers preserved from the DXF.
+  - name: indicators
+    path: out/w2/indicators.csv
+    kind: csv
+    note: Building density, FAR, green ratio, population density, kernel density.
+  - name: run_log
+    path: out/w2/run-log.md
+    kind: markdown
+    note: Parameters, projection, formulas, warnings — everything needed to reproduce the numbers.
+
+audit:
+  log: out/w2/audit.log
+  require:
+    - CRS and units used, and any mismatch treated as an error
+    - formula and parameter value for every indicator
+    - conversion warnings and how each was handled
+    - agent model, prompt and result for step w2-3

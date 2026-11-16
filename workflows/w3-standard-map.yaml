@@ -1,0 +1,73 @@
+workflow:
+  version: "0.0.1"
+  id: w3
+  name: Standard map export
+  description: >
+    Render a standard planning map from W2 outputs and a map template:
+    title, legend, scale bar, north arrow, frame, data source and
+    production date. Same data + same template renders identically
+    (except the embedded production date).
+
+inputs:
+  - name: w2_outputs
+    path: out/w2/
+    kind: geojson
+    required: true
+    note: GeoJSON + indicators.csv produced by workflow w2.
+  - name: template
+    path: templates/standard-map.yaml
+    kind: yaml
+    required: true
+    note: Map template — layout, fonts, legend entries, scale, frame style.
+
+parameters:
+  - name: dpi
+    value: 300
+    unit: dpi
+    source: print standard for planning maps
+  - name: page_size
+    value: A3
+    unit: paper
+    source: template default; change per template
+  - name: scale
+    value: 1000
+    unit: ratio
+    source: "template default (1:1000); change per template"
+
+steps:
+  - id: w3-1
+    kind: deterministic
+    name: Load W2 outputs and map template
+    runs: sidecar.load_map_inputs
+    outputs: [map-inputs.json]
+  - id: w3-2
+    kind: deterministic
+    name: Render PNG / PDF / SVG at 300 dpi
+    runs: sidecar.render_map
+    outputs: [map.png, map.pdf, map.svg]
+  - id: w3-3
+    kind: human_review
+    name: Human review of the rendered map
+    outputs: [map.png]
+
+outputs:
+  - name: map_png
+    path: out/w3/map.png
+    kind: png
+    note: 300 dpi raster output.
+  - name: map_pdf
+    path: out/w3/map.pdf
+    kind: pdf
+    note: Vector output for print.
+  - name: map_svg
+    path: out/w3/map.svg
+    kind: svg
+    note: Vector output for the web.
+
+audit:
+  log: out/w3/audit.log
+  require:
+    - template file and version
+    - W2 output files and their run-log reference
+    - DPI, page size and scale used
+    - human reviewer decision for step w3-3

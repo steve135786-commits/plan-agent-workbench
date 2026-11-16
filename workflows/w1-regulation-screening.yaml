@@ -1,0 +1,86 @@
+workflow:
+  version: "0.0.1"
+  id: w1
+  name: Regulation screening
+  description: >
+    Screen one synthetic parcel against limits extracted from a regulation
+    document. Output is a checklist (pass / review / fail) with a source
+    citation on every item. Screening assistant only — a human reviews
+    before any verdict is finalised. All values below are SYNTHETIC
+    examples, not real regulation clauses.
+
+inputs:
+  - name: regulation
+    path: data/regulations/example-regulation.md
+    kind: markdown
+    required: true
+    note: Example text with clause numbers; replace with a real public regulation.
+  - name: parcel
+    path: data/parcels/synthetic-parcel-a.csv
+    kind: csv
+    required: true
+    note: >-
+      Synthetic parcel: land use R2, site area 12000 m2, FAR 2.5,
+      building density 30%, green ratio 35%, height limit 60 m.
+
+parameters:
+  - name: far_limit
+    value: 2.5
+    unit: ratio
+    source: regulation example clause 3.2 (synthetic)
+  - name: density_limit
+    value: 35
+    unit: percent
+    source: regulation example clause 3.4 (synthetic)
+  - name: green_ratio_min
+    value: 30
+    unit: percent
+    source: regulation example clause 3.5 (synthetic)
+  - name: height_limit
+    value: 60
+    unit: m
+    source: regulation example clause 3.6 (synthetic)
+
+steps:
+  - id: w1-1
+    kind: deterministic
+    name: Parse regulation and extract limits
+    runs: sidecar.parse_regulation
+    outputs: [limits.json]
+  - id: w1-2
+    kind: deterministic
+    name: Compare parcel indicators against limits
+    runs: sidecar.compare_indicators
+    outputs: [checklist-draft.csv]
+  - id: w1-3
+    kind: agent
+    name: Draft plain-language explanation for each flagged item
+    uses: acp-agent
+    outputs: [explanations.md]
+  - id: w1-4
+    kind: human_review
+    name: Human review before the checklist is finalised
+    outputs: [checklist.md]
+
+outputs:
+  - name: checklist
+    path: out/w1/checklist.md
+    kind: markdown
+    note: "One row per item: pass / review / fail + clause + page citation."
+  - name: checklist_csv
+    path: out/w1/checklist.csv
+    kind: csv
+    note: Machine-readable copy of the checklist.
+  - name: explanations
+    path: out/w1/explanations.md
+    kind: markdown
+    note: Agent-drafted, human-reviewed explanations.
+
+audit:
+  log: out/w1/audit.log
+  require:
+    - regulation source file and version
+    - every limit with clause number and page
+    - parcel indicator values and their source
+    - agent model, prompt and result for step w1-3
+    - human reviewer decision for step w1-4
