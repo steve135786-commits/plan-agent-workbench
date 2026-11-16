@@ -2,6 +2,6 @@
 geopandas>=1.0
 shapely>=2.0
 pyproj>=3.6
-# ezdxf>=1.3  # DXF parsing — W2 w2-1 (Phase 1)
+ezdxf>=1.3  # DXF parsing — W2 w2-1 (Phase 1)
 pyshp>=2.3  # shapefile writing for W2 w2-1 (pure Python)
 # matplotlib>=3.8  # map rendering for W3 — add when W3 lands in Phase 2

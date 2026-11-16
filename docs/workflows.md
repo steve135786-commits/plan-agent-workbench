@@ -37,7 +37,10 @@ Steps: `w1-1` parse regulation → extract limits with clause/page citations (de
 `w1-2` compare parcel indicators against limits (deterministic); `w1-3` agent drafts the
 plain-language explanation of each flagged item (agent); `w1-4` human review before the
 checklist is finalised. Verdicts are only `pass` / `review` / `fail` — never "compliant"
-as an absolute claim.
+as an absolute claim. Runner behavior: a `human_review` step pauses the run (exit 3)
+after writing the draft outputs; `plan-agent run <workflow> --approve` verifies the
+draft is unchanged since the pause, records the human decision in the audit log, and
+only then writes the final output.
 
 ## W2 — CAD↔GIS + indicators
 
