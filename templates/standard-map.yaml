@@ -1,0 +1,120 @@
+# Standard map template — A3 landscape (SYNTHETIC demo)
+#
+# Styles the W2 demo parcel (SYNTHETIC-A, 12 x 8 m building on a
+# 12000 m2 site). It is NOT a real planning map template: colours,
+# line weights and the layout below are demo choices, not a statutory
+# standard. Replace with the project's real template before
+# production use.
+#
+# Scale honesty: the nominal scale is 1:1000 (workflow parameter),
+# but a 14.1 x 10.5 m extent at 1:1000 is 14 mm wide on A3 — unreadable.
+# The renderer therefore fits the plan into the map frame at the
+# smallest standard scale that fits (1:10 / 1:20 / 1:25 / 1:50 / 1:100 /
+# 1:200 / 1:250 / 1:500 / 1:1000) and prints THAT scale on the map and
+# in the audit log. The scale bar is always drawn in ground metres at
+# the plotted scale, never at the nominal one. A map that printed
+# "1:1000" next to a bar drawn at 1:50 would be a lie.
+
+template:
+  version: "0.1.0"
+  name: standard-map-a3-landscape
+  description: A3 landscape standard map for the synthetic W2 demo parcel.
+
+  page:
+    size: A3
+    orientation: landscape
+    width_mm: 420
+    height_mm: 297
+
+  scale:
+    nominal: 1000
+    mode: fit  # fit to the map frame; report the actual plotted scale
+    standard_scales: [10, 20, 25, 50, 100, 200, 250, 500, 1000]
+
+  # Layout in millimetres, origin at the lower-left corner of the page.
+  layout:
+    outer_frame_inset_mm: 8
+    title_band_top_mm: 272       # title + subtitle sit above this line
+    map_frame:                   # the plan itself
+      x_mm: 15
+      y_mm: 15
+      width_mm: 300
+      height_mm: 250
+    side_panel:                  # legend + data block + source + date
+      x_mm: 322
+      y_mm: 15
+      width_mm: 90
+      height_mm: 250
+
+  title:
+    main: "Standard Map — Synthetic Parcel A"
+    subtitle: "SYNTHETIC demo — not a real plan"
+
+  fonts:
+    family: "DejaVu Sans"  # bundled with matplotlib; same on every machine
+    title_pt: 20
+    subtitle_pt: 11
+    legend_pt: 10
+    data_pt: 10
+    small_pt: 8
+
+  # One legend entry per W2 layer. Colour = the colour the layer is
+  # drawn in; width_pt = line width; style = solid / dashed.
+  legend:
+    - layer: WALL
+      label: "Wall"
+      colour: "#000000"
+      width_pt: 2.0
+      style: solid
+    - layer: WINDOW
+      label: "Window"
+      colour: "#1f77b4"
+      width_pt: 2.0
+      style: solid
+    - layer: DOOR
+      label: "Door"
+      colour: "#2ca02c"
+      width_pt: 1.5
+      style: solid
+    - layer: DIMENSION
+      label: "Dimension"
+      colour: "#7f7f7f"
+      width_pt: 0.8
+      style: solid
+    - layer: AXIS
+      label: "Axis"
+      colour: "#d62728"
+      width_pt: 0.8
+      style: dashed
+
+  scale_bar:
+    length_m: 5          # total bar length in ground metres
+    segment_m: 1         # one alternating segment
+    label_every_m: 1
+    caption: "metres (ground)"
+
+  north_arrow:
+    label: "N"
+
+  # Indicators from W2 shown in the side data block, in this order.
+  data_block:
+    title: "Key indicators (W2)"
+    items:
+      - indicator: building_density_pct
+        label: "Building density"
+        format: "{:.0f} %"
+      - indicator: far
+        label: "Floor area ratio"
+        format: "{:.2f}"
+      - indicator: green_ratio_pct
+        label: "Green ratio"
+        format: "{:.0f} %"
+      - indicator: population_persons
+        label: "Population"
+        format: "{:.0f} persons"
+      - indicator: population_density_per_ha
+        label: "Population density"
+        format: "{:.0f} / ha"
+
+  source_line: "Source: W2 outputs (plan.geojson, indicators.csv) — SYNTHETIC demo parcel A"
+  date_label: "Production date"

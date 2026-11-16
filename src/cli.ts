@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * plan-agent CLI — v0.1.0 (Phase 1: W1 and W2 run end-to-end; ACP client connected).
+ * plan-agent CLI — v0.1.0 (Phase 1: W1, W2 and W3 run end-to-end; ACP client connected).
  *
  * Commands:
  *   plan-agent demo            list the MVP workflows
@@ -118,7 +118,7 @@ function listWorkflows(): WorkflowSummary[] {
 }
 
 function printHelp(): void {
-  console.log(`plan-agent ${VERSION} — ACP planning workbench (Phase 1: W1 and W2 run)
+  console.log(`plan-agent ${VERSION} — ACP planning workbench (Phase 1: W1, W2 and W3 run)
 
 Usage:
   plan-agent demo              list the MVP workflows
@@ -154,13 +154,14 @@ function cmdDemo(): void {
     console.log("No workflows found in workflows/.");
     return;
   }
-  console.log("MVP workflows (W1 and W2 run end-to-end; W3 engine lands later):\n");
+  console.log("MVP workflows (W1, W2 and W3 run end-to-end):\n");
   for (const w of workflows) {
     console.log(`  ${w.id}  ${w.name}`);
     if (w.description) console.log(`      ${w.description}`);
   }
   console.log("\nRun one: plan-agent run workflows/w1-regulation-screening.yaml");
   console.log("         plan-agent run workflows/w2-cad-gis-metrics.yaml");
+  console.log("         plan-agent run workflows/w3-standard-map.yaml");
 }
 
 // ---------------------------------------------------------------------------
@@ -504,6 +505,42 @@ function appendEvidenceSections(auditLines: string[], outDir: string): void {
       );
     }
   }
+  const mapInputsPath = join(outDir, "map-inputs.json");
+  if (existsSync(mapInputsPath)) {
+    const mi = JSON.parse(readFileSync(mapInputsPath, "utf-8")) as {
+      template: { file: string; version: string; name: string };
+      w2_outputs: {
+        plan_geojson: { path: string; sha256: string; bytes: number };
+        indicators_csv: { path: string; sha256: string; bytes: number };
+        run_log: { path: string; sha256: string; bytes: number };
+        run_log_reference: string;
+      };
+      parameters: { dpi: number; page_size: string; scale_nominal: number; scale_mode: string };
+      plan: { feature_count: number; layers: Record<string, { features: number }> };
+      indicators: Record<string, number>;
+      render?: { plotted_scale: number; production_date: string; features_drawn: number };
+    };
+    auditLines.push("", "## Map inputs (from map-inputs.json)");
+    auditLines.push(`- template: ${mi.template.file} (Version: ${mi.template.version})`);
+    auditLines.push(`- W2 plan.geojson: ${mi.w2_outputs.plan_geojson.path} (sha256 ${mi.w2_outputs.plan_geojson.sha256.slice(0, 16)}..., ${mi.w2_outputs.plan_geojson.bytes} bytes)`);
+    auditLines.push(`- W2 indicators.csv: ${mi.w2_outputs.indicators_csv.path} (sha256 ${mi.w2_outputs.indicators_csv.sha256.slice(0, 16)}..., ${mi.w2_outputs.indicators_csv.bytes} bytes)`);
+    auditLines.push(`- W2 run log: ${mi.w2_outputs.run_log_reference}`);
+    auditLines.push(`- DPI: ${mi.parameters.dpi}, page: ${mi.parameters.page_size}, nominal scale 1:${mi.parameters.scale_nominal}, mode: ${mi.parameters.scale_mode}`);
+    if (mi.render) {
+      auditLines.push(`- plotted scale: 1:${mi.render.plotted_scale} (nominal 1:${mi.parameters.scale_nominal} — fitted to the map frame; the scale bar is at the plotted scale)`);
+      auditLines.push(`- production date: ${mi.render.production_date}`);
+      auditLines.push(`- features drawn: ${mi.render.features_drawn} of ${mi.plan.feature_count}`);
+    }
+    for (const [layer, info] of Object.entries(mi.plan.layers)) {
+      auditLines.push(`- layer ${layer}: ${info.features} features`);
+    }
+    auditLines.push(
+      `- indicators on the map: building density ${mi.indicators["building_density_pct"]}%, ` +
+        `FAR ${mi.indicators["far"]}, green ratio ${mi.indicators["green_ratio_pct"]}%, ` +
+        `population ${mi.indicators["population_persons"]} persons, ` +
+        `${mi.indicators["population_density_per_ha"]}/ha`,
+    );
+  }
   const convLog = join(outDir, "conversion-log.md");
   if (existsSync(convLog)) {
     const conv = readFileSync(convLog, "utf-8");
@@ -625,6 +662,53 @@ function runDeterministicStep(step: WorkflowStep, ctx: StepContext): void {
     if (r.code !== 0) throw sidecarFailed(step, step.runs, r);
     const rows = readChecklistRows(join(outDir, "checklist-draft.csv"));
     auditLines.push(`- ${step.id} ${step.name}: OK (exit 0) — ${rows.length} checklist rows written (checklist-draft.csv)`);
+  } else if (step.runs === "sidecar.load_map_inputs") {
+    const w2Dir = inputPaths.get("w2_outputs");
+    const template = inputPaths.get("template");
+    if (!w2Dir) throw new Error("missing required input 'w2_outputs'");
+    if (!template) throw new Error("missing required input 'template'");
+    const param = (name: string): string => {
+      const p = doc.parameters.find((x) => x.name === name);
+      if (p === undefined) throw new Error(`step ${step.id}: workflow parameter '${name}' missing`);
+      return String(p.value);
+    };
+    const r = runSidecar("load_map_inputs.py", [
+      "--w2-dir", w2Dir,
+      "--template", template,
+      "--out", outDir,
+      "--dpi", param("dpi"),
+      "--page-size", param("page_size"),
+      "--scale", param("scale"),
+    ]);
+    if (r.code !== 0) throw sidecarFailed(step, step.runs, r);
+    const inputs = JSON.parse(readFileSync(join(outDir, "map-inputs.json"), "utf-8")) as {
+      plan: { feature_count: number; layers: Record<string, unknown> };
+      template: { name: string; version: string };
+    };
+    auditLines.push(
+      `- ${step.id} ${step.name}: OK (exit 0) — ${inputs.plan.feature_count} features in ` +
+        `${Object.keys(inputs.plan.layers).length} layers; template ${inputs.template.name} ` +
+        `v${inputs.template.version} (map-inputs.json)`,
+    );
+  } else if (step.runs === "sidecar.render_map") {
+    const w2Dir = inputPaths.get("w2_outputs");
+    if (!w2Dir) throw new Error("missing required input 'w2_outputs'");
+    const inputsJson = join(outDir, "map-inputs.json");
+    if (!existsSync(inputsJson)) throw new Error(`step ${step.id}: map-inputs.json missing — run w3-1 first`);
+    const r = runSidecar("render_map.py", [
+      "--inputs", inputsJson,
+      "--geojson", join(w2Dir, "plan.geojson"),
+      "--out", outDir,
+    ]);
+    if (r.code !== 0) throw sidecarFailed(step, step.runs, r);
+    const inputs = JSON.parse(readFileSync(inputsJson, "utf-8")) as {
+      render: { features_drawn: number; plotted_scale: number; scale_nominal: number };
+    };
+    auditLines.push(
+      `- ${step.id} ${step.name}: OK (exit 0) — ${inputs.render.features_drawn} features at ` +
+        `plotted scale 1:${inputs.render.plotted_scale} (nominal 1:${inputs.render.scale_nominal}); ` +
+        `map.png/pdf/svg written`,
+    );
   } else {
     throw new Error(`step ${step.id}: unsupported deterministic runner '${step.runs}'`);
   }
@@ -769,15 +853,15 @@ interface ReviewState {
 }
 
 /**
- * Pause a run at a human_review step. Writes the draft outputs (the
- * machine-readable checklist.csv copy of the draft, plus review-state.json
- * with sha256 hashes of everything in the output dir so --approve can
- * refuse a changed draft), finishes the audit log and returns exit 3.
- * The final output (checklist.md) is deliberately NOT written here.
- *
- * The integrity check is W1-specific: the draft is checklist-draft.csv +
- * limits.json. A workflow whose human_review step has no such draft fails
- * loudly instead of pausing — its draft contract is not defined yet.
+ * Pause a run at a human_review step. The draft is whatever the
+ * deterministic steps before this step produced in the output dir —
+ * every file there (except audit.log and review-state.json) is hashed
+ * into review-state.json so --approve can refuse a changed draft.
+ * Finishes the audit log and returns exit 3. Nothing is finalised
+ * here: for W1 the final checklist.md is written only by --approve;
+ * for W3 the rendered maps become final only when --approve marks
+ * them so. A run with no draft files at all fails loudly instead of
+ * pausing — a human_review step with nothing to review is a repo bug.
  */
 function pauseForHumanReview(
   step: WorkflowStep,
@@ -788,22 +872,24 @@ function pauseForHumanReview(
   auditLines: string[],
   auditPath: string,
 ): number {
-  const draft = join(outDir, "checklist-draft.csv");
-  const limits = join(outDir, "limits.json");
-  for (const f of [draft, limits]) {
-    if (!existsSync(f)) {
-      throw new Error(`step ${step.id}: draft output missing — cannot pause for review: ${f}`);
-    }
-  }
+  // W1: the machine-readable checklist.csv is a copy of the draft.
   const csvOut = doc.outputs.find((o) => o.name === "checklist_csv");
-  const csvPath = csvOut ? resolveUnderRoot(csvOut.path) : join(outDir, "checklist.csv");
-  copyFileSync(draft, csvPath);
+  if (csvOut) {
+    const draft = join(outDir, "checklist-draft.csv");
+    if (!existsSync(draft)) {
+      throw new Error(`step ${step.id}: draft output missing — cannot pause for review: ${draft}`);
+    }
+    copyFileSync(draft, resolveUnderRoot(csvOut.path));
+  }
 
   const files: Record<string, string> = {};
   for (const name of readdirSync(outDir).sort()) {
     if (name === "audit.log" || name === "review-state.json") continue;
     const full = join(outDir, name);
     if (statSync(full).isFile()) files[name] = sha256File(full);
+  }
+  if (Object.keys(files).length === 0) {
+    throw new Error(`step ${step.id}: no draft output to review — cannot pause for review`);
   }
   const state: ReviewState = {
     workflow: doc.workflow.id,
@@ -822,10 +908,17 @@ function pauseForHumanReview(
   appendOutputsSection(auditLines, doc, outDir);
   auditLines.push("", "## Human review gate");
   auditLines.push(`- paused at step ${step.id} ${step.name} — no final output written`);
-  auditLines.push("- draft: checklist-draft.csv + checklist.csv + limits.json (see review-state.json)");
+  auditLines.push(`- draft: ${Object.keys(files).join(" + ")} (see review-state.json)`);
+  const finalNames = (step.outputs ?? []).join(", ") || "(none declared)";
+  auditLines.push(`- final outputs under review: ${finalNames}`);
   auditLines.push(`- finalise with: plan-agent run ${target} --approve`);
   auditLines.push("", "## Result — PAUSED for human review (exit 3)");
-  auditLines.push("- checklist.md is written only after a human approves the draft");
+  const checklistOut = doc.outputs.find((o) => o.name === "checklist");
+  if (checklistOut) {
+    auditLines.push(`- ${checklistOut.path} is written only after a human approves the draft`);
+  } else {
+    auditLines.push("- the draft outputs above become final only after a human approves them");
+  }
   try {
     writeFileSync(auditPath, auditLines.join("\n") + "\n", "utf-8");
   } catch {
@@ -880,8 +973,10 @@ function renderChecklist(
  * `plan-agent run <workflow> --approve`: finalise a run paused at a
  * human_review step. Verifies the draft is byte-identical to the pause
  * (workflow YAML hash + every file hash in review-state.json), records
- * the human decision in the audit log, and only then writes the final
- * output. Never auto-approves, never fakes a human decision.
+ * the human decision in the audit log, and only then finalises: for W1
+ * the final checklist.md is written from the draft; for other
+ * workflows (W3) the draft outputs are marked final in place, with no
+ * re-render. Never auto-approves, never fakes a human decision.
  */
 function cmdApprove(target: string): number {
   try {
@@ -938,38 +1033,80 @@ function cmdApprove(target: string): number {
         return 1;
       }
     }
-    const draftPath = join(outDir, "checklist-draft.csv");
-    const limitsPath = join(outDir, "limits.json");
     const checklistOut = doc.outputs.find((o) => o.name === "checklist");
-    if (!checklistOut) {
-      console.error("ERROR: workflow declares no 'checklist' output — refusing to approve");
+    if (checklistOut) {
+      // W1 path: the final output (checklist.md) is derived from the
+      // draft at approve time — it does not exist at pause time.
+      const draftPath = join(outDir, "checklist-draft.csv");
+      const limitsPath = join(outDir, "limits.json");
+      const checklistPath = resolveUnderRoot(checklistOut.path);
+      if (existsSync(checklistPath)) {
+        console.error(`ERROR: ${checklistOut.path} already exists — refusing to overwrite; delete it or re-run the workflow`);
+        return 1;
+      }
+      const rows = readChecklistRows(draftPath);
+      const limits = JSON.parse(readFileSync(limitsPath, "utf-8")) as {
+        regulation: { file: string; version: string };
+      };
+      const approver = safeUsername();
+      const approvedAt = new Date().toISOString();
+      // Whether w1-3 drafted explanations (and by which agent) is read
+      // from the explanations file header the runner wrote at run time.
+      let explanationsNote =
+        "explanations.md was not drafted — the agent step was skipped: no ACP agent connected.";
+      const explanationsPath = join(outDir, "explanations.md");
+      if (existsSync(explanationsPath)) {
+        const header = readFileSync(explanationsPath, "utf-8").slice(0, 2000);
+        const agentLine = header.match(/agent: (.+)/)?.[1]?.trim() ?? "unknown agent";
+        // The agent line already carries "[FAKE (test-only)]" when the fake
+        // was used, so no second marker is needed here.
+        explanationsNote = `explanations.md was drafted by ${agentLine} — proposal, reviewed at this step.`;
+      }
+      const md = renderChecklist(doc, limits.regulation, rows, approver, approvedAt, state.paused_at, explanationsNote);
+      writeFileSync(checklistPath, md, "utf-8");
+      state.status = "approved";
+      state.approver = approver;
+      state.approved_at = approvedAt;
+      writeFileSync(statePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
+      appendFileSync(
+        auditPath,
+        `\n## Human review decision\n` +
+          `- approved by ${approver} at ${approvedAt} (step ${reviewStep.id})\n` +
+          `- draft verified unchanged since the pause at ${state.paused_at} (workflow YAML + every output file, sha256)\n` +
+          `- checklist.md written (${statSync(checklistPath).size} bytes)\n`,
+        "utf-8",
+      );
+      console.log(`APPROVED by ${approver}: ${checklistOut.path} written.`);
+      return 0;
+    }
+    // Generic path (W3 and later workflows): the human_review step's
+    // declared outputs are the final outputs. They must exist and be
+    // part of the verified draft; approving finalises them in place —
+    // no re-render, which would change the production date and break
+    // the hash anyway. Any other declared workflow output present in
+    // the draft is finalised with them (W3: map.pdf / map.svg share
+    // the approved render with map.png).
+    for (const name of reviewStep.outputs ?? []) {
+      const full = join(outDir, name);
+      if (!existsSync(full) || !(name in state.files)) {
+        console.error(`ERROR: final output ${name} is missing from the paused draft — refusing to approve; re-run the workflow`);
+        return 1;
+      }
+    }
+    const finalised: string[] = [];
+    for (const o of doc.outputs) {
+      const base = o.path.split("/").pop() as string;
+      if (base in state.files) {
+        const full = resolveUnderRoot(o.path);
+        if (existsSync(full)) finalised.push(`${o.path} (${statSync(full).size} bytes)`);
+      }
+    }
+    if (finalised.length === 0) {
+      console.error("ERROR: no declared workflow output is in the paused draft — refusing to approve; re-run the workflow");
       return 1;
     }
-    const checklistPath = resolveUnderRoot(checklistOut.path);
-    if (existsSync(checklistPath)) {
-      console.error(`ERROR: ${checklistOut.path} already exists — refusing to overwrite; delete it or re-run the workflow`);
-      return 1;
-    }
-    const rows = readChecklistRows(draftPath);
-    const limits = JSON.parse(readFileSync(limitsPath, "utf-8")) as {
-      regulation: { file: string; version: string };
-    };
     const approver = safeUsername();
     const approvedAt = new Date().toISOString();
-    // Whether w1-3 drafted explanations (and by which agent) is read
-    // from the explanations file header the runner wrote at run time.
-    let explanationsNote =
-      "explanations.md was not drafted — the agent step was skipped: no ACP agent connected.";
-    const explanationsPath = join(outDir, "explanations.md");
-    if (existsSync(explanationsPath)) {
-      const header = readFileSync(explanationsPath, "utf-8").slice(0, 2000);
-      const agentLine = header.match(/agent: (.+)/)?.[1]?.trim() ?? "unknown agent";
-      // The agent line already carries "[FAKE (test-only)]" when the fake
-      // was used, so no second marker is needed here.
-      explanationsNote = `explanations.md was drafted by ${agentLine} — proposal, reviewed at this step.`;
-    }
-    const md = renderChecklist(doc, limits.regulation, rows, approver, approvedAt, state.paused_at, explanationsNote);
-    writeFileSync(checklistPath, md, "utf-8");
     state.status = "approved";
     state.approver = approver;
     state.approved_at = approvedAt;
@@ -979,10 +1116,12 @@ function cmdApprove(target: string): number {
       `\n## Human review decision\n` +
         `- approved by ${approver} at ${approvedAt} (step ${reviewStep.id})\n` +
         `- draft verified unchanged since the pause at ${state.paused_at} (workflow YAML + every output file, sha256)\n` +
-        `- checklist.md written (${statSync(checklistPath).size} bytes)\n`,
+        `- finalised: ${finalised.join(", ")}\n`,
       "utf-8",
     );
-    console.log(`APPROVED by ${approver}: ${checklistOut.path} written.`);
+    console.log(
+      `APPROVED by ${approver}: ${finalised.map((f) => f.split(" (")[0]).join(", ")} finalised.`,
+    );
     return 0;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

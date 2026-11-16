@@ -58,4 +58,42 @@ not assumptions: a CRS/unit mismatch is an error, not a warning.
 
 Steps: `w3-1` load W2 outputs + template YAML (deterministic); `w3-2` render PNG/PDF/SVG
 at 300 dpi (deterministic); `w3-3` human review of the rendered map. Same data + same
-template must render byte-identical output (except the embedded production date).
+template renders the same drawing; per-format byte identity: the PNG is byte-identical
+and the PDF is byte-identical (its CreationDate/ModDate are set to the production
+date), but the SVG is only visually identical — matplotlib embeds a wall-clock
+timestamp and random clip-path ids in it, so its bytes differ run to run. The
+production date is the one sanctioned difference in the drawing itself.
+
+Scale honesty: the nominal scale is 1:1000, but a 14 m demo parcel at 1:1000 is 14 mm
+wide on A3 — unreadable. The renderer fits the plan into the map frame at the smallest
+standard scale that fits and prints THAT scale on the map and in the audit log; the
+scale bar is drawn in ground metres at the plotted scale, never at the nominal one.
+
+## Human review gate — the general contract
+
+A `human_review` step pauses the run (exit 3) and `--approve` finalises it. The contract
+is the same for every workflow; only the finalisation differs:
+
+- **The draft is whatever the deterministic steps before the gate produced** in the
+  workflow's output directory. At pause time every file there (except `audit.log` and
+  `review-state.json`) is hashed (sha256) into `review-state.json`, together with the
+  workflow YAML hash, the step id, and the pause timestamp.
+- **A run with no draft files fails loudly** instead of pausing — a gate with nothing
+  to review is a repo bug.
+- **`--approve` verifies the draft is byte-identical** (workflow YAML hash + every file
+  hash in `review-state.json`), records the human decision (approver = OS username,
+  timestamp) in the audit log, and only then finalises. It refuses on: no paused run,
+  already approved, changed workflow YAML, any changed/missing draft file, or a
+  missing declared final output. There is no auto-approval and no way to approve a
+  changed draft.
+- **Finalisation, per workflow:**
+  - W1: the final `checklist.md` is *derived* from the draft at approve time (it does
+    not exist at pause time); `--approve` refuses to overwrite an existing one.
+  - W3 (and later workflows without a derived final file): the draft outputs are
+    marked final *in place* — no re-render, which would change the production date
+    and break the hash. The human_review step's declared outputs plus any other
+    declared workflow outputs present in the draft are finalised together (W3:
+    `map.png` + `map.pdf` + `map.svg` share one approved render).
+- **W1-only extra:** at pause time the runner also copies `checklist-draft.csv` to the
+  declared `checklist_csv` output, so the machine-readable copy exists alongside the
+  draft.

@@ -5,8 +5,10 @@ workflow:
   description: >
     Render a standard planning map from W2 outputs and a map template:
     title, legend, scale bar, north arrow, frame, data source and
-    production date. Same data + same template renders identically
-    (except the embedded production date).
+    production date. Same data + same template renders the same drawing
+    (PNG and PDF byte-identical given the same production date; SVG
+    visually identical but its bytes differ — matplotlib embeds a
+    wall-clock timestamp and random clip-path ids).
 
 inputs:
   - name: w2_outputs
