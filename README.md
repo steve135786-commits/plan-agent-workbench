@@ -5,10 +5,12 @@
 > planning-regulation screening, CAD↔GIS conversion, density / FAR / green-ratio calculation,
 > kernel-density analysis, and standards-compliant map export.
 
-**Status: v0.0.1 skeleton (Phase 0).** The CLI runs `plan-agent demo` and lists the three
-workflows; `plan-agent run` is not wired up yet. W2 step w2-2 has a working minimal demo:
-`sidecar/compute_indicators.py` reads a synthetic parcel CSV and writes the indicator table
-plus run log (see `out/w2/` after running it). See [docs/workflows.md](docs/workflows.md).
+**Status: v0.0.1, Phase 1 — W2 runs end-to-end.** `plan-agent run
+workflows/w2-cad-gis-metrics.yaml` validates the YAML, converts the synthetic
+DXF to GeoJSON/SHP, computes the 8 indicators and writes the audit log
+(`out/w2/`). The w2-3 agent-review step is skipped until the ACP client is
+connected — it is logged, never faked. W1 and W3 engines are not built yet.
+See [docs/workflows.md](docs/workflows.md).
 
 ---
 
@@ -60,8 +62,15 @@ pip install -r sidecar/requirements.txt
 # 3. See the three MVP workflows
 plan-agent demo
 
-# 4. Run one (engines landing in Phase 1)
+# 4. Run W2 end-to-end (validates the YAML, converts the DXF, computes
+#    indicators, writes the audit log; exit 0 on success)
 plan-agent run workflows/w2-cad-gis-metrics.yaml
+# Expected outputs in out/w2/: plan.geojson, plan.shp (+ plan_polygons.shp,
+# plan_points.shp — a shapefile holds one geometry type), indicators.csv,
+# run-log.md, conversion-log.md, audit.log
+# Note: coordinates are local planar metres from the synthetic plan, NOT
+# lon/lat; no .prj is written because the YAML default EPSG:4326 does not
+# apply to them.
 ```
 
 ## The three MVP workflows
@@ -69,7 +78,7 @@ plan-agent run workflows/w2-cad-gis-metrics.yaml
 | ID | Workflow | Input | Output |
 |----|----------|-------|--------|
 | W1 | Regulation screening | Regulation PDF/text + parcel indicator table | Markdown + CSV checklist (pass / review / fail), every item cited |
-| W2 | CAD↔GIS + indicators | DXF / SHP / GeoJSON | GeoJSON/SHP + indicator CSV (density, FAR, green ratio, population density, kernel density) + run log |
+| W2 | CAD↔GIS + indicators | DXF / SHP / GeoJSON | GeoJSON + SHP (lines in plan.shp, polygons/points in companion files) + indicator CSV (density, FAR, green ratio, population density, kernel density) + run log + audit log — runs end-to-end; w2-3 agent review skipped until the ACP client lands |
 | W3 | Standard map export | W2 results + map template YAML | PNG (300 dpi) / PDF / SVG with title, legend, scale bar, north arrow, frame, source, date |
 
 Workflow format (fields, step types, audit rules): [docs/workflows.md](docs/workflows.md).
@@ -79,8 +88,8 @@ Example files: [workflows/w1-regulation-screening.yaml](workflows/w1-regulation-
 
 ## Roadmap
 
-- **Phase 0 (weeks 1–2):** repo, README, workflow YAML format, v0.0.1 — *this is where we are*
-- **Phase 1 (weeks 3–6):** ACP client connects to Codex CLI; W2 then W1 run end-to-end; v0.1.0
+- **Phase 0 (weeks 1–2):** repo, README, workflow YAML format, v0.0.1 — done
+- **Phase 1 (weeks 3–6):** ACP client connects to Codex CLI; W2 then W1 run end-to-end; v0.1.0 — *W2 done, ACP client + W1 remain*
 - **Phase 2 (weeks 7–10):** W3 map export; VS Code extension v0.1; demo video; v0.2.0
 - **Phase 3 (weeks 11–16):** publish, collect adoption evidence, release every 1–2 weeks
 - **Phase 4 (months 4–6):** apply to OpenAI Codex for Open Source when the evidence is ready
@@ -103,8 +112,11 @@ Apache-2.0 — see [LICENSE](LICENSE).
 > 接 Codex / Claude Code，通过 Agent Client Protocol 跑可审计的工作流：
 > 规范合规初筛、CAD↔GIS 互转、建筑密度 / 容积率 / 绿地率 / 核密度计算、标准出图。
 
-**当前状态：v0.0.1 骨架（Phase 0）。**CLI 能跑 `plan-agent demo` 并列出三条工作流；
-W1–W3 的计算引擎尚未实现，格式定义见 [docs/workflows.md](docs/workflows.md)。
+**当前状态：v0.0.1，Phase 1——W2 已跑通。**`plan-agent run
+workflows/w2-cad-gis-metrics.yaml` 校验 YAML、把合成 DXF 转成 GeoJSON/SHP、
+算出 8 个指标、写审计日志（`out/w2/`）。w2-3 的 Agent 复核在 ACP 客户端
+接通前跳过——只记日志、不编造结果。W1、W3 的引擎还没做，格式定义见
+[docs/workflows.md](docs/workflows.md)。
 
 ## 这是什么
 
@@ -132,7 +144,13 @@ W1–W3 的计算引擎尚未实现，格式定义见 [docs/workflows.md](docs/w
 npm install && npm run build
 pip install -r sidecar/requirements.txt
 plan-agent demo
+# W2 全流程跑通（校验 YAML、转 DXF、算指标、写审计日志；成功返回 0）
 plan-agent run workflows/w2-cad-gis-metrics.yaml
+# out/w2/ 里应有：plan.geojson、plan.shp（另有 plan_polygons.shp、
+# plan_points.shp——一个 shapefile 只存一种几何类型）、indicators.csv、
+# run-log.md、conversion-log.md、audit.log
+# 注意：坐标是合成图的局部平面米，不是经纬度；YAML 默认的 EPSG:4326
+# 不适用，所以不写 .prj。
 ```
 
 ## 三条 MVP 工作流
@@ -140,13 +158,13 @@ plan-agent run workflows/w2-cad-gis-metrics.yaml
 | 编号 | 工作流 | 输入 | 输出 |
 |------|--------|------|------|
 | W1 | 规范合规初筛 | 规范 PDF/文本 + 地块指标表 | Markdown + CSV 检查表（通过 / 存疑 / 不通过），每项带原文引用 |
-| W2 | CAD↔GIS 互转 + 指标计算 | DXF / SHP / GeoJSON | GeoJSON/SHP + 指标 CSV + 计算过程日志 |
+| W2 | CAD↔GIS 互转 + 指标计算 | DXF / SHP / GeoJSON | GeoJSON + SHP（线在 plan.shp，多边形/点在 companion 文件）+ 指标 CSV + 计算过程日志 + 审计日志——已跑通；w2-3 Agent 复核等 ACP 客户端 |
 | W3 | 标准出图 | W2 结果 + 出图模板 YAML | PNG（300 dpi）/ PDF / SVG，带图名、图例、比例尺、指北针、图框、来源、日期 |
 
 ## 路线图
 
-- **Phase 0（第 1–2 周）：**建库、README、工作流 YAML 格式、v0.0.1——*目前在此*
-- **Phase 1（第 3–6 周）：**ACP 客户端连通 Codex CLI；W2、W1 先后跑通；v0.1.0
+- **Phase 0（第 1–2 周）：**建库、README、工作流 YAML 格式、v0.0.1——已完成
+- **Phase 1（第 3–6 周）：**ACP 客户端连通 Codex CLI；W2、W1 先后跑通；v0.1.0——*W2 已跑通，ACP 客户端 + W1 待做*
 - **Phase 2（第 7–10 周）：**W3 出图跑通；VS Code 插件 v0.1；演示视频；v0.2.0
 - **Phase 3（第 11–16 周）：**发布、收集采用证据、每 1–2 周发一版
 - **Phase 4（第 4–6 个月）：**证据够了再申 OpenAI Codex for Open Source

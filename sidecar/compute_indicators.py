@@ -142,9 +142,10 @@ def main() -> int:
         "- Kernel-density points are local planar metres around the parcel centroid.",
         "  The W2 YAML default CRS EPSG:4326 does NOT apply to them — do not mix",
         "  these coordinates with lon/lat data. Real runs must set the project CRS first.",
-        "- W2 step w2-1 (DXF -> GeoJSON/SHP, needs ezdxf) is NOT in this demo;",
-        "  the CSV here stands in for its output. Step w2-3 (agent review) is also",
-        "  not run — nothing here is a compliance verdict.",
+        "- W2 step w2-1 (DXF -> GeoJSON/SHP) is implemented in sidecar/dxf_to_geojson.py;",
+        "  the parcel CSV here is still a synthetic stand-in for DXF-derived parcel",
+        "  data. Step w2-3 (agent review) is also not run — nothing here is",
+        "  a compliance verdict.",
         "- All values are SYNTHETIC examples from the workflow YAML, not real",
         "  regulation clauses or a real parcel.",
     ]
