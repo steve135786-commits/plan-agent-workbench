@@ -35,7 +35,7 @@ faked — when none is. See [docs/workflows.md](docs/workflows.md).
 
 - Not a generic AI chat client, not a notes app, not a question bank.
 - No online map service, no account system, no cloud storage.
-- No Tauri desktop yet — CLI first, VS Code extension second, desktop last.
+- No polished Tauri desktop yet — the `tauri-app/` shell is v0.1 (same CLI, same review gate); the fancy desktop comes after v0.2.
 - It does **not** promise "AI automatically certifies compliance". It is a screening assistant;
   a human reviews the result.
 
@@ -148,12 +148,39 @@ real W1 pause → approve harness), 4/4 integration tests in a real
 VS Code 1.146.0 headless run; not yet clicked through by hand in a
 real window — see [vscode-extension/README.md](vscode-extension/README.md).
 
+## Desktop app (Tauri 2)
+
+`tauri-app/` — a desktop window over the same CLI: workflow list with a
+Run button each, a streaming run log, a status line with the last run
+result and time, and an in-app outputs view (checklist.md rendered,
+indicators.csv as a table, map.png as an image, map.pdf embedded,
+audit.log as text). When a run pauses at the human-review gate, a review
+dialog shows the actual draft — the W1 checklist table, the W2 indicator
+table, or the W3 rendered map — with Review draft / Approve; approval
+always goes through the CLI's `--approve` path. An agent status panel
+runs `plan-agent agent --status` (no model call). Settings (CLI path,
+workspace root) persist in the Tauri app config directory; no machine
+paths are hardcoded. Build: `cd tauri-app && npm install && npm run
+tauri:dev` (or `npm run tauri:build` for the .deb / .AppImage bundle);
+Linux needs libwebkit2gtk-4.1-dev and friends — see
+[tauri-app/README.md](tauri-app/README.md). Verified: 19/19 Rust tests
+(including an end-to-end W1 pause → approve → W2 run harness against
+the real CLI, plus an agent `--status` round-trip), frontend build 0
+errors; the window launch is smoke-tested headless under xvfb
+(`tauri-app/scripts/smoke-test.sh`: window opens, frontend JS runs, 3
+workflows list, per-workflow statuses and the agent chip load) — not
+yet clicked through by hand in a real window, and not yet tested
+against a real ACP agent binary. All three Linux bundles build
+(`.deb`, `.rpm`, `.AppImage`); the `.deb` was installed and the
+packaged release binary launched headless (bundled frontend, same
+init flow) and then uninstalled.
+
 ## Roadmap
 
 - **Phase 0 (weeks 1–2):** repo, README, workflow YAML format, v0.0.1 — done
 - **Phase 1 (weeks 3–6):** ACP client connects to Codex CLI; W2, W1 and W3 run end-to-end; v0.1.0 — *W1 + W2 + W3 done, ACP client connected (verified against the test fake agent; not yet tested against a real agent binary)*
 - **Phase 2 (weeks 7–10):** VS Code extension v0.1; demo video; v0.2.0 — *extension v0.1 done (verified headless; not yet used by hand in a real window)*
-- **Phase 3 (weeks 11–16):** publish, collect adoption evidence, release every 1–2 weeks
+- **Phase 3 (weeks 11–16):** Tauri 2 desktop app v0.1 (same CLI, same review gate, in-app outputs); publish, collect adoption evidence, release every 1–2 weeks
 - **Phase 4 (months 4–6):** apply to OpenAI Codex for Open Source when the evidence is ready
 
 ## Contributing
@@ -199,7 +226,7 @@ Agent 步骤（w1-3、w2-3）在配好 Agent 后走 ACP 客户端运行（`PLAN_
 
 - 不是通用 AI 聊天客户端，不是笔记应用，不是题库。
 - 没有在线地图服务、没有账号系统、没有云端存储。
-- 暂时没有 Tauri 精美桌面——先 CLI，再 VS Code 插件，最后桌面。
+- Tauri 精美桌面还没做——`tauri-app/` 目前是 v0.1 的壳（同一个 CLI、同一道复核关卡），精美桌面留到 v0.2 之后。
 - 不承诺“AI 自动出合规结论”，只做可复核的初筛，结论由人复核。
 
 ## 架构
@@ -259,12 +286,16 @@ plan-agent run workflows/w3-standard-map.yaml --approve
 
 `vscode-extension/`——不用终端，在编辑器里跑工作流：`PlanAgent: Run Workflow`（选 W1/W2/W3，输出进 PlanAgent 通道）、`PlanAgent: Approve Paused Run`、`PlanAgent: Open Outputs`、`PlanAgent: Show Audit Log`、`PlanAgent: Agent Status`（跑 `plan-agent agent --status`，只报配置、不花模型调用）。资源管理器里的 PlanAgent 树按 `review-state.json` / `audit.log` 显示每条工作流的状态（不确定的写 unknown，不编状态），状态栏显示上次运行结果和时间。跑到人工复核关卡暂停时，编辑器会弹“看草稿 / 批准”，批准永远走 CLI 的 `--approve` 路径。设置：`planAgent.cliPath`、`planAgent.workspaceRoot`（都可选，不写死本机路径）。构建打包：`cd vscode-extension && npm install && npm run compile && npx vsce package`。已验证：单元测试 13/13（含真实 W1 暂停→批准全程）、真 VS Code 1.146.0 无头集成测试 4/4；还没在真实窗口里手工点过——见 [vscode-extension/README.md](vscode-extension/README.md)。
 
+## 桌面版（Tauri 2）
+
+`tauri-app/`——同一个 CLI 的桌面窗口：工作流列表各带 Run 按钮、实时滚动的运行日志、带时间的上次运行状态、站内产物查看（checklist.md 渲染、indicators.csv 表格、map.png 图片、map.pdf 内嵌、audit.log 文本）。跑到人工复核关卡暂停时弹复核对话框，里面是真正的草稿——W1 检查表、W2 指标表或 W3 渲染图——“看草稿 / 批准”两个按钮，批准永远走 CLI 的 `--approve` 路径。Agent 状态面板跑 `plan-agent agent --status`（不花模型调用）。设置（CLI 路径、工作区根目录）存在 Tauri 应用配置目录里，不写死本机路径。构建：`cd tauri-app && npm install && npm run tauri:dev`（打包用 `npm run tauri:build`，出 .deb / .AppImage）；Linux 要装 libwebkit2gtk-4.1-dev 等系统依赖——见 [tauri-app/README.md](tauri-app/README.md)。已验证：Rust 测试 19/19（含真实 W1 暂停→批准→W2 运行的全程 harness、Agent `--status` 往返），前端构建 0 报错；窗口启动在 xvfb 下无头冒烟测过（`tauri-app/scripts/smoke-test.sh`：窗口打开、前端 JS 跑起来、3 条工作流列出、各状态与 Agent 面板加载），还没在真实窗口里手工点过，也没对真实 ACP Agent 二进制测过。
+
 ## 路线图
 
 - **Phase 0（第 1–2 周）：**建库、README、工作流 YAML 格式、v0.0.1——已完成
 - **Phase 1（第 3–6 周）：**ACP 客户端连通 Codex CLI；W2、W1、W3 先后跑通；v0.1.0——*W1 + W2 + W3 已跑通，ACP 客户端已接通（只在内置假 Agent 上验过，还没对真实 Agent 二进制测过）*
 - **Phase 2（第 7–10 周）：**VS Code 插件 v0.1；演示视频；v0.2.0——*插件 v0.1 已做完（无头验证通过，还没在真实窗口里手工用过）*
-- **Phase 3（第 11–16 周）：**发布、收集采用证据、每 1–2 周发一版
+- **Phase 3（第 11–16 周）：**Tauri 2 桌面版 v0.1（同一个 CLI、同一道复核关卡、站内看产物）；发布、收集采用证据、每 1–2 周发一版
 - **Phase 4（第 4–6 个月）：**证据够了再申 OpenAI Codex for Open Source
 
 ## 许可证
