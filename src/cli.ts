@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * plan-agent CLI — v0.0.1 (Phase 1: W2 runs end-to-end).
+ * plan-agent CLI — v0.1.0 (Phase 1: W1 and W2 run end-to-end).
  *
  * Commands:
  *   plan-agent demo            list the MVP workflows
@@ -31,7 +31,7 @@ import { parse as parseYaml } from "yaml";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const WORKFLOWS_DIR = join(ROOT, "workflows");
-const VERSION = "0.0.1";
+const VERSION = "0.1.0";
 
 interface WorkflowSummary {
   id: string;

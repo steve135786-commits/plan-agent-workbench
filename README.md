@@ -5,7 +5,7 @@
 > planning-regulation screening, CAD↔GIS conversion, density / FAR / green-ratio calculation,
 > kernel-density analysis, and standards-compliant map export.
 
-**Status: v0.0.1, Phase 1 — W1 and W2 run end-to-end.** `plan-agent run
+**Status: v0.1.0, Phase 1 — W1 and W2 run end-to-end.** `plan-agent run
 workflows/w1-regulation-screening.yaml` parses the synthetic regulation,
 screens the synthetic parcel and pauses at the human-review gate (exit 3);
 `plan-agent run ... --approve` finalises the checklist after verifying the
@@ -128,7 +128,7 @@ Apache-2.0 — see [LICENSE](LICENSE).
 > 接 Codex / Claude Code，通过 Agent Client Protocol 跑可审计的工作流：
 > 规范合规初筛、CAD↔GIS 互转、建筑密度 / 容积率 / 绿地率 / 核密度计算、标准出图。
 
-**当前状态：v0.0.1，Phase 1——W1、W2 已跑通。**`plan-agent run
+**当前状态：v0.1.0，Phase 1——W1、W2 已跑通。**`plan-agent run
 workflows/w1-regulation-screening.yaml` 解析合成规范、核查合成地块，
 然后在人工复核关卡暂停（exit 3）；`plan-agent run ... --approve`
 在核对草稿没被改动后才定稿。`plan-agent run
