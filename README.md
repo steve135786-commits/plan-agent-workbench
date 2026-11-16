@@ -1,0 +1,156 @@
+# PlanAgent Workbench
+
+> An open-source ACP client + deterministic workflow engine for urban planning and GIS professionals.
+> Connects Codex / Claude Code via the Agent Client Protocol (ACP) and runs auditable workflows:
+> planning-regulation screening, CAD↔GIS conversion, density / FAR / green-ratio calculation,
+> kernel-density analysis, and standards-compliant map export.
+
+**Status: v0.0.1 skeleton (Phase 0).** The CLI runs `plan-agent demo` and lists the three
+workflows; `plan-agent run` is not wired up yet. W2 step w2-2 has a working minimal demo:
+`sidecar/compute_indicators.py` reads a synthetic parcel CSV and writes the indicator table
+plus run log (see `out/w2/` after running it). See [docs/workflows.md](docs/workflows.md).
+
+---
+
+## What this is
+
+- A **workbench for planning work**, not a generic chat shell. Every run is a workflow
+  (YAML) made of deterministic steps and agent steps, with an audit log that can be replayed.
+- Built for real planning tasks: read a regulation, check a parcel against it, convert CAD↔GIS,
+  compute planning indicators, export a standard map.
+- **Auditable by design**: every check cites its source clause / page; every number logs the
+  parameters, projection and formula used. No black-box "AI says compliant".
+
+## What this is not
+
+- Not a generic AI chat client, not a notes app, not a question bank.
+- No online map service, no account system, no cloud storage.
+- No Tauri desktop yet — CLI first, VS Code extension second, desktop last.
+- It does **not** promise "AI automatically certifies compliance". It is a screening assistant;
+  a human reviews the result.
+
+## Architecture
+
+```
+┌─────────────────────────────┐
+│  plan-agent CLI (TypeScript)│  ← ACP client core (JSON-RPC over stdio)
+│  src/cli.ts                 │  ← workflow runner, session + audit log
+└──────────────┬──────────────┘
+               │ spawns
+┌──────────────▼──────────────┐
+│  GIS sidecar (Python)       │  ← GeoPandas / Shapely / PyProj / GDAL
+│  sidecar/                   │  ← indicator math, CAD↔GIS conversion, map export
+└─────────────────────────────┘
+               │
+┌──────────────▼──────────────┐
+│  workflows/*.yaml           │  ← deterministic workflow definitions (W1–W3)
+└─────────────────────────────┘
+```
+
+## Quickstart
+
+```bash
+# 1. Prerequisites: Node.js 20+, Python 3.11+
+npm install
+npm run build
+
+# 2. GIS sidecar
+pip install -r sidecar/requirements.txt
+
+# 3. See the three MVP workflows
+plan-agent demo
+
+# 4. Run one (engines landing in Phase 1)
+plan-agent run workflows/w2-cad-gis-metrics.yaml
+```
+
+## The three MVP workflows
+
+| ID | Workflow | Input | Output |
+|----|----------|-------|--------|
+| W1 | Regulation screening | Regulation PDF/text + parcel indicator table | Markdown + CSV checklist (pass / review / fail), every item cited |
+| W2 | CAD↔GIS + indicators | DXF / SHP / GeoJSON | GeoJSON/SHP + indicator CSV (density, FAR, green ratio, population density, kernel density) + run log |
+| W3 | Standard map export | W2 results + map template YAML | PNG (300 dpi) / PDF / SVG with title, legend, scale bar, north arrow, frame, source, date |
+
+Workflow format (fields, step types, audit rules): [docs/workflows.md](docs/workflows.md).
+Example files: [workflows/w1-regulation-screening.yaml](workflows/w1-regulation-screening.yaml),
+[workflows/w2-cad-gis-metrics.yaml](workflows/w2-cad-gis-metrics.yaml),
+[workflows/w3-standard-map.yaml](workflows/w3-standard-map.yaml).
+
+## Roadmap
+
+- **Phase 0 (weeks 1–2):** repo, README, workflow YAML format, v0.0.1 — *this is where we are*
+- **Phase 1 (weeks 3–6):** ACP client connects to Codex CLI; W2 then W1 run end-to-end; v0.1.0
+- **Phase 2 (weeks 7–10):** W3 map export; VS Code extension v0.1; demo video; v0.2.0
+- **Phase 3 (weeks 11–16):** publish, collect adoption evidence, release every 1–2 weeks
+- **Phase 4 (months 4–6):** apply to OpenAI Codex for Open Source when the evidence is ready
+
+## Contributing
+
+Issues and PRs welcome. Workflow changes must keep the audit trail: no step may silently
+produce a number — parameters, projection and formula go in the log. English first in docs;
+Chinese welcome alongside.
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE).
+
+---
+
+# PlanAgent Workbench（规划 Agent 工作台）
+
+> 开源 ACP 客户端 + 确定性规划工作流引擎，面向城乡规划 / GIS 从业者。
+> 接 Codex / Claude Code，通过 Agent Client Protocol 跑可审计的工作流：
+> 规范合规初筛、CAD↔GIS 互转、建筑密度 / 容积率 / 绿地率 / 核密度计算、标准出图。
+
+**当前状态：v0.0.1 骨架（Phase 0）。**CLI 能跑 `plan-agent demo` 并列出三条工作流；
+W1–W3 的计算引擎尚未实现，格式定义见 [docs/workflows.md](docs/workflows.md)。
+
+## 这是什么
+
+- **给规划活用的工作台**，不是通用聊天壳。每一次运行都是一份工作流（YAML），
+  由确定性步骤 + Agent 步骤组成，全程留审计日志、可回放。
+- 为真实规划任务而做：读规范、按条文核地块、CAD↔GIS 互转、算规划指标、出标准图。
+- **可审计是底线**：每项检查都引用原文条款/页码；每个数字都记录参数、投影和计算口径。
+  不做“AI 直接判合规”的黑盒承诺。
+
+## 这不是什么
+
+- 不是通用 AI 聊天客户端，不是笔记应用，不是题库。
+- 没有在线地图服务、没有账号系统、没有云端存储。
+- 暂时没有 Tauri 精美桌面——先 CLI，再 VS Code 插件，最后桌面。
+- 不承诺“AI 自动出合规结论”，只做可复核的初筛，结论由人复核。
+
+## 架构
+
+同上英文版架构图：TS 写 ACP 客户端核心（JSON-RPC over stdio），Python 写 GIS 计算 sidecar
+（GeoPandas / Shapely / PyProj / GDAL），工作流用 YAML 定义。
+
+## 快速上手
+
+```bash
+npm install && npm run build
+pip install -r sidecar/requirements.txt
+plan-agent demo
+plan-agent run workflows/w2-cad-gis-metrics.yaml
+```
+
+## 三条 MVP 工作流
+
+| 编号 | 工作流 | 输入 | 输出 |
+|------|--------|------|------|
+| W1 | 规范合规初筛 | 规范 PDF/文本 + 地块指标表 | Markdown + CSV 检查表（通过 / 存疑 / 不通过），每项带原文引用 |
+| W2 | CAD↔GIS 互转 + 指标计算 | DXF / SHP / GeoJSON | GeoJSON/SHP + 指标 CSV + 计算过程日志 |
+| W3 | 标准出图 | W2 结果 + 出图模板 YAML | PNG（300 dpi）/ PDF / SVG，带图名、图例、比例尺、指北针、图框、来源、日期 |
+
+## 路线图
+
+- **Phase 0（第 1–2 周）：**建库、README、工作流 YAML 格式、v0.0.1——*目前在此*
+- **Phase 1（第 3–6 周）：**ACP 客户端连通 Codex CLI；W2、W1 先后跑通；v0.1.0
+- **Phase 2（第 7–10 周）：**W3 出图跑通；VS Code 插件 v0.1；演示视频；v0.2.0
+- **Phase 3（第 11–16 周）：**发布、收集采用证据、每 1–2 周发一版
+- **Phase 4（第 4–6 个月）：**证据够了再申 OpenAI Codex for Open Source
+
+## 许可证
+
+Apache-2.0 — see [LICENSE](LICENSE).
