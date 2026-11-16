@@ -136,6 +136,8 @@ Usage:
                                print its text answer (see docs/acp-client.md)
   plan-agent agent --prompt "..." --fake
                                same, against the built-in test fake agent
+  plan-agent agent --status   report the configured agent without
+                               spawning one (exit 0 configured, 1 not)
   plan-agent --help            show this help
 
 Agent configuration: PLAN_AGENT_COMMAND env var, or plan-agent.config.json
@@ -178,6 +180,7 @@ function cmdDemo(): void {
 async function cmdAgent(args: string[]): Promise<number> {
   let prompt: string | null = null;
   let fake = false;
+  let status = false;
   let timeoutMs: number | undefined;
   for (let i = 0; i < args.length; i++) {
     const a = args[i] as string;
@@ -187,6 +190,8 @@ async function cmdAgent(args: string[]): Promise<number> {
       prompt = a.slice("--prompt=".length);
     } else if (a === "--fake") {
       fake = true;
+    } else if (a === "--status") {
+      status = true;
     } else if (a === "--timeout-ms") {
       const v = Number(args[++i]);
       if (!Number.isFinite(v) || v <= 0) {
@@ -204,8 +209,36 @@ async function cmdAgent(args: string[]): Promise<number> {
     } else {
       console.error(`ERROR: unknown argument for 'agent': ${a}`);
       console.error('Usage: plan-agent agent --prompt "..." [--fake] [--timeout-ms N]');
+      console.error('       plan-agent agent --status [--fake]');
       return 2;
     }
+  }
+  if (status) {
+    // `plan-agent agent --status`: report the resolved agent configuration
+    // WITHOUT spawning any agent (no model call, no cost). Added for the
+    // VS Code extension's Agent Status command; see docs/acp-client.md.
+    let statusConfig: AgentConfig | null;
+    try {
+      statusConfig = fake ? fakeAgentConfig() : resolveAgentConfig();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`ERROR: ${msg}`);
+      return 1;
+    }
+    if (!statusConfig) {
+      console.error(
+        "ERROR: no ACP agent configured — set PLAN_AGENT_COMMAND " +
+          '(e.g. PLAN_AGENT_COMMAND="npx -y @agentclientprotocol/codex-acp") ' +
+          "or add plan-agent.config.json (see plan-agent.config.example.json and docs/acp-client.md); " +
+          "use --fake to test against the built-in fake agent",
+      );
+      return 1;
+    }
+    console.log("configured: yes");
+    console.log(`agent: ${statusConfig.name} (${statusConfig.command.join(" ")})`);
+    console.log(`source: ${statusConfig.source}`);
+    console.log(`fake: ${statusConfig.fake ? "yes" : "no"}`);
+    return 0;
   }
   if (prompt === null || prompt === "") {
     console.error('Usage: plan-agent agent --prompt "..." [--fake] [--timeout-ms N]');

@@ -128,11 +128,31 @@ Example files: [workflows/w1-regulation-screening.yaml](workflows/w1-regulation-
 [workflows/w2-cad-gis-metrics.yaml](workflows/w2-cad-gis-metrics.yaml),
 [workflows/w3-standard-map.yaml](workflows/w3-standard-map.yaml).
 
+## VS Code extension
+
+`vscode-extension/` — run the workflows from the editor instead of the
+terminal: `PlanAgent: Run Workflow` (quick-pick W1/W2/W3, output in the
+PlanAgent channel), `PlanAgent: Approve Paused Run`,
+`PlanAgent: Open Outputs`, `PlanAgent: Show Audit Log`,
+`PlanAgent: Agent Status` (runs `plan-agent agent --status` — reports
+the configured agent without spending a model call). A PlanAgent tree
+in the Explorer shows each workflow's status from `review-state.json`
+/ `audit.log` (never invented), and the status bar shows the last run
+result with the time it ran. When a run pauses at the human-review
+gate, the editor offers Review draft / Approve — approval always goes
+through the CLI's `--approve` path. Settings: `planAgent.cliPath`,
+`planAgent.workspaceRoot` (both optional; no machine paths hardcoded).
+Build and package: `cd vscode-extension && npm install && npm run
+compile && npx vsce package`. Verified: 13/13 unit tests (including a
+real W1 pause → approve harness), 4/4 integration tests in a real
+VS Code 1.146.0 headless run; not yet clicked through by hand in a
+real window — see [vscode-extension/README.md](vscode-extension/README.md).
+
 ## Roadmap
 
 - **Phase 0 (weeks 1–2):** repo, README, workflow YAML format, v0.0.1 — done
 - **Phase 1 (weeks 3–6):** ACP client connects to Codex CLI; W2, W1 and W3 run end-to-end; v0.1.0 — *W1 + W2 + W3 done, ACP client connected (verified against the test fake agent; not yet tested against a real agent binary)*
-- **Phase 2 (weeks 7–10):** VS Code extension v0.1; demo video; v0.2.0
+- **Phase 2 (weeks 7–10):** VS Code extension v0.1; demo video; v0.2.0 — *extension v0.1 done (verified headless; not yet used by hand in a real window)*
 - **Phase 3 (weeks 11–16):** publish, collect adoption evidence, release every 1–2 weeks
 - **Phase 4 (months 4–6):** apply to OpenAI Codex for Open Source when the evidence is ready
 
@@ -235,11 +255,15 @@ plan-agent run workflows/w3-standard-map.yaml --approve
 | W2 | CAD↔GIS 互转 + 指标计算 | DXF / SHP / GeoJSON | GeoJSON + SHP（线在 plan.shp，多边形/点在 companion 文件）+ 指标 CSV + 计算过程日志 + 审计日志——已跑通；w2-3 Agent 复核在配好 Agent 后运行，没配就跳过（只记日志） |
 | W3 | 标准出图 | W2 结果 + 出图模板 YAML | PNG（300 dpi）/ PDF / SVG，带图名、图例、比例尺、指北针、图框、来源、日期——已跑通；在人工复核关卡暂停（exit 3），`--approve` 原地定稿；按 1:50 绘制（名义 1:1000，适配图框，比例尺条按实际比例尺画） |
 
+## VS Code 插件
+
+`vscode-extension/`——不用终端，在编辑器里跑工作流：`PlanAgent: Run Workflow`（选 W1/W2/W3，输出进 PlanAgent 通道）、`PlanAgent: Approve Paused Run`、`PlanAgent: Open Outputs`、`PlanAgent: Show Audit Log`、`PlanAgent: Agent Status`（跑 `plan-agent agent --status`，只报配置、不花模型调用）。资源管理器里的 PlanAgent 树按 `review-state.json` / `audit.log` 显示每条工作流的状态（不确定的写 unknown，不编状态），状态栏显示上次运行结果和时间。跑到人工复核关卡暂停时，编辑器会弹“看草稿 / 批准”，批准永远走 CLI 的 `--approve` 路径。设置：`planAgent.cliPath`、`planAgent.workspaceRoot`（都可选，不写死本机路径）。构建打包：`cd vscode-extension && npm install && npm run compile && npx vsce package`。已验证：单元测试 13/13（含真实 W1 暂停→批准全程）、真 VS Code 1.146.0 无头集成测试 4/4；还没在真实窗口里手工点过——见 [vscode-extension/README.md](vscode-extension/README.md)。
+
 ## 路线图
 
 - **Phase 0（第 1–2 周）：**建库、README、工作流 YAML 格式、v0.0.1——已完成
 - **Phase 1（第 3–6 周）：**ACP 客户端连通 Codex CLI；W2、W1、W3 先后跑通；v0.1.0——*W1 + W2 + W3 已跑通，ACP 客户端已接通（只在内置假 Agent 上验过，还没对真实 Agent 二进制测过）*
-- **Phase 2（第 7–10 周）：**VS Code 插件 v0.1；演示视频；v0.2.0
+- **Phase 2（第 7–10 周）：**VS Code 插件 v0.1；演示视频；v0.2.0——*插件 v0.1 已做完（无头验证通过，还没在真实窗口里手工用过）*
 - **Phase 3（第 11–16 周）：**发布、收集采用证据、每 1–2 周发一版
 - **Phase 4（第 4–6 个月）：**证据够了再申 OpenAI Codex for Open Source
 

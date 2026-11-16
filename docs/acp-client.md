@@ -82,6 +82,17 @@ plan-agent agent --prompt "..." --fake
 Same, but against the built-in test fake agent (see below). No
 configuration needed; the `--fake` flag is the explicit opt-in.
 
+```
+plan-agent agent --status [--fake]
+```
+
+Report the resolved agent configuration without spawning any agent
+(no model call, no cost): `configured: yes`, `agent: <name>
+(<command>)`, `source: <where it came from>`, `fake: yes/no`.
+Exit 0 when an agent is configured, 1 with the usual one-line
+guidance when not. Added for the VS Code extension's Agent Status
+command, which must report configuration without spending a call.
+
 ## What the client refuses to do (deny by default)
 
 The client advertises **no** client-side capabilities
