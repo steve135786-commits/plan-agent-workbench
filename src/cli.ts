@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 /**
- * plan-agent CLI — v0.1.0 (Phase 1: W1 and W2 run end-to-end).
+ * plan-agent CLI — v0.1.0 (Phase 1: W1 and W2 run end-to-end; ACP client connected).
  *
  * Commands:
  *   plan-agent demo            list the MVP workflows
  *   plan-agent run <workflow>  validate the YAML and execute its steps
+ *   plan-agent agent --prompt "…"  send one prompt to the configured ACP agent
  *   plan-agent --help
  *
  * `run` executes deterministic steps by spawning the Python sidecar and
- * skips agent steps with an explicit audit-log entry — it never fakes
- * agent output. The ACP client itself is still pending. See
- * docs/workflows.md for the YAML format and the validation rules.
+ * runs agent steps through the ACP client when an agent is configured
+ * (see docs/acp-client.md); when no agent is configured, agent steps
+ * are skipped with an explicit audit-log entry — output is never faked.
+ * A human_review step still gates any final output, agent output or not.
  */
 import {
   readdirSync,
@@ -28,6 +30,15 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { userInfo } from "node:os";
 import { parse as parseYaml } from "yaml";
+import {
+  resolveAgentConfig,
+  fakeAgentConfig,
+  runAgentPrompt,
+  truncateForLog,
+  DEFAULT_TIMEOUT_MS,
+  type AgentConfig,
+  type AgentCallResult,
+} from "./acp-client.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const WORKFLOWS_DIR = join(ROOT, "workflows");
@@ -112,14 +123,25 @@ function printHelp(): void {
 Usage:
   plan-agent demo              list the MVP workflows
   plan-agent run <workflow>    validate and run a workflow YAML (deterministic
-                               steps execute; agent steps are skipped until
-                               an ACP agent is connected; a human_review step
-                               pauses the run — see --approve)
+                               steps execute; agent steps run through the ACP
+                               client when an agent is configured, otherwise
+                               they are skipped; a human_review step pauses
+                               the run — see --approve)
   plan-agent run <workflow> --approve
                                finalise a run paused at a human_review step:
                                verifies the draft is unchanged, records the
                                human decision and writes the final output
+  plan-agent agent --prompt "..."
+                               send one prompt to the configured ACP agent and
+                               print its text answer (see docs/acp-client.md)
+  plan-agent agent --prompt "..." --fake
+                               same, against the built-in test fake agent
   plan-agent --help            show this help
+
+Agent configuration: PLAN_AGENT_COMMAND env var, or plan-agent.config.json
+(see plan-agent.config.example.json). No agent configured → agent steps are
+skipped, never faked. PLAN_AGENT_TIMEOUT_MS sets the per-call timeout
+(default ${DEFAULT_TIMEOUT_MS} ms).
 
 Exit codes: 0 done, 1 error, 2 usage, 3 paused for human review.
 
@@ -139,6 +161,90 @@ function cmdDemo(): void {
   }
   console.log("\nRun one: plan-agent run workflows/w1-regulation-screening.yaml");
   console.log("         plan-agent run workflows/w2-cad-gis-metrics.yaml");
+}
+
+// ---------------------------------------------------------------------------
+// `plan-agent agent`
+// ---------------------------------------------------------------------------
+
+/**
+ * Send one prompt to the ACP agent and print its text answer to stdout.
+ * The call record (agent, model, stop reason, sizes) goes to stderr so
+ * stdout stays clean text. --fake uses the built-in test fake agent;
+ * otherwise the configured agent is used, and a missing configuration
+ * is a clear error, not a silent fallback.
+ */
+async function cmdAgent(args: string[]): Promise<number> {
+  let prompt: string | null = null;
+  let fake = false;
+  let timeoutMs: number | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i] as string;
+    if (a === "--prompt") {
+      prompt = args[++i] ?? null;
+    } else if (a.startsWith("--prompt=")) {
+      prompt = a.slice("--prompt=".length);
+    } else if (a === "--fake") {
+      fake = true;
+    } else if (a === "--timeout-ms") {
+      const v = Number(args[++i]);
+      if (!Number.isFinite(v) || v <= 0) {
+        console.error("ERROR: --timeout-ms must be a positive number of milliseconds");
+        return 2;
+      }
+      timeoutMs = v;
+    } else if (a.startsWith("--timeout-ms=")) {
+      const v = Number(a.slice("--timeout-ms=".length));
+      if (!Number.isFinite(v) || v <= 0) {
+        console.error("ERROR: --timeout-ms must be a positive number of milliseconds");
+        return 2;
+      }
+      timeoutMs = v;
+    } else {
+      console.error(`ERROR: unknown argument for 'agent': ${a}`);
+      console.error('Usage: plan-agent agent --prompt "..." [--fake] [--timeout-ms N]');
+      return 2;
+    }
+  }
+  if (prompt === null || prompt === "") {
+    console.error('Usage: plan-agent agent --prompt "..." [--fake] [--timeout-ms N]');
+    return 2;
+  }
+  let config: AgentConfig | null;
+  try {
+    config = fake ? fakeAgentConfig() : resolveAgentConfig();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`ERROR: ${msg}`);
+    return 1;
+  }
+  if (!config) {
+    console.error(
+      "ERROR: no ACP agent configured — set PLAN_AGENT_COMMAND " +
+        '(e.g. PLAN_AGENT_COMMAND="npx -y @agentclientprotocol/codex-acp") ' +
+        "or add plan-agent.config.json (see plan-agent.config.example.json and docs/acp-client.md); " +
+        "use --fake to test against the built-in fake agent",
+    );
+    return 1;
+  }
+  try {
+    const result = await runAgentPrompt(config, prompt, { cwd: process.cwd(), timeoutMs });
+    process.stdout.write(result.text + (result.text.endsWith("\n") ? "" : "\n"));
+    console.error(
+      `--- agent call ---\n` +
+        `agent: ${result.agent} (${result.command})${result.fake ? " [FAKE (test-only)]" : ""}\n` +
+        `model: ${result.model}\n` +
+        `stop reason: ${result.stopReason}\n` +
+        `permission requests denied: ${result.permissionRequestsDenied}\n` +
+        `prompt: ${prompt.length} chars\n` +
+        `result: ${result.text.length} chars`,
+    );
+    return 0;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`ERROR: ${msg}`);
+    return 1;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +513,11 @@ function appendEvidenceSections(auditLines: string[], outDir: string): void {
     auditLines.push(warnText || "- none");
     auditLines.push("- handling: warnings are recorded here and in conversion-log.md; no feature was silently dropped (unsupported types are skipped with a warning, out-of-range coordinates are kept and flagged)");
   }
+  const reviewPath = join(outDir, "conversion-review.md");
+  if (existsSync(reviewPath)) {
+    auditLines.push("", "## Agent review (conversion-review.md)");
+    auditLines.push(`- ${statSync(reviewPath).size} bytes — agent review of the conversion warnings (see the w2-3 audit entry above)`);
+  }
 }
 
 function appendOutputsSection(auditLines: string[], doc: WorkflowDoc, outDir: string): void {
@@ -519,6 +630,132 @@ function runDeterministicStep(step: WorkflowStep, ctx: StepContext): void {
   }
 }
 
+interface AgentStepPlan {
+  /** Prompt template file, relative to the repo root. */
+  templateRel: string;
+  /** Composed prompt text (template + step inputs). */
+  prompt: string;
+  /** Absolute path of the file the agent's answer is written to. */
+  outputPath: string;
+}
+
+/**
+ * Resolve an agent step to its prompt template and output file, keyed
+ * by the step's declared output file (same pattern as AGENT_SKIP_NOTES).
+ * Throws a one-line error when no template exists — an agent step with
+ * no prompt template is a repo bug, not a silent skip.
+ */
+function planAgentStep(step: WorkflowStep, ctx: StepContext): AgentStepPlan {
+  const { doc, outDir } = ctx;
+  const outputs = step.outputs ?? [];
+  const outputPathFor = (name: string): string => {
+    const declared = doc.outputs.find((o) => o.path.endsWith(`/${name}`));
+    return declared ? resolveUnderRoot(declared.path) : join(outDir, name);
+  };
+  const readTemplate = (rel: string, placeholder: string): string => {
+    const text = readFileSync(join(ROOT, rel), "utf-8");
+    if (!text.includes(placeholder)) {
+      throw new Error(`step ${step.id}: prompt template ${rel} is missing placeholder ${placeholder}`);
+    }
+    return text;
+  };
+
+  if (outputs.includes("explanations.md")) {
+    const templateRel = "prompts/w1-explanations.md";
+    const draft = join(outDir, "checklist-draft.csv");
+    if (!existsSync(draft)) throw new Error(`step ${step.id}: checklist-draft.csv missing — run w1-2 first`);
+    return {
+      templateRel,
+      prompt: readTemplate(templateRel, "{{CHECKLIST_DRAFT}}").replace(
+        "{{CHECKLIST_DRAFT}}",
+        readFileSync(draft, "utf-8").trimEnd(),
+      ),
+      outputPath: outputPathFor("explanations.md"),
+    };
+  }
+  if (outputs.includes("conversion-review.md")) {
+    const templateRel = "prompts/w2-review.md";
+    const convLog = join(outDir, "conversion-log.md");
+    const convText = existsSync(convLog)
+      ? readFileSync(convLog, "utf-8").trimEnd()
+      : "(no conversion log found — w2-1 produced no warnings file)";
+    const indicators = join(outDir, "indicators.csv");
+    const indText = existsSync(indicators)
+      ? readFileSync(indicators, "utf-8").trimEnd()
+      : "(indicators.csv not found)";
+    return {
+      templateRel,
+      prompt: readTemplate(templateRel, "{{CONVERSION_LOG}}")
+        .replace("{{CONVERSION_LOG}}", convText)
+        .replace("{{INDICATORS}}", indText),
+      outputPath: outputPathFor("conversion-review.md"),
+    };
+  }
+  throw new Error(
+    `step ${step.id}: no prompt template for agent output [${outputs.join(", ")}] — ` +
+      "add one in prompts/ (docs/acp-client.md)",
+  );
+}
+
+/**
+ * Execute one agent step through the ACP client. When no agent is
+ * configured, the step is skipped with an explicit audit entry —
+ * exactly the v0.1.0 behaviour — and no output is produced. When an
+ * agent is configured, its answer is written to the step's output file
+ * with a header comment (agent, model, time, prompt template, stop
+ * reason, FAKE flag) and the full audit record (model, prompt, result).
+ * An agent failure fails the run loudly; an agent answer never
+ * finalises anything — in W1 the human_review step still gates the
+ * checklist.
+ */
+async function runAgentStep(step: WorkflowStep, ctx: StepContext): Promise<void> {
+  const { auditLines } = ctx;
+  let config: AgentConfig | null;
+  try {
+    config = resolveAgentConfig();
+  } catch (err) {
+    throw new Error(`step ${step.id} (agent): ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (!config) {
+    // Never fake agent output: skip and say so in the audit log.
+    auditLines.push(`- ${step.id} ${step.name}: ${agentSkipNote(step)}`);
+    return;
+  }
+  const plan = planAgentStep(step, ctx);
+  let result: AgentCallResult;
+  try {
+    result = await runAgentPrompt(config, plan.prompt, { cwd: ROOT });
+  } catch (err) {
+    throw new Error(`step ${step.id} (agent) failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const fakeTag = result.fake ? " [FAKE (test-only)]" : "";
+  const header =
+    `<!-- plan-agent agent output — proposal, not a verdict\n` +
+    `     agent: ${result.agent} (${result.command})${fakeTag}\n` +
+    `     model: ${result.model}\n` +
+    `     at: ${new Date().toISOString()}\n` +
+    `     stop: ${result.stopReason}\n` +
+    `     prompt: ${plan.templateRel}\n` +
+    `     fake: ${result.fake ? "yes" : "no"}\n` +
+    `     permission requests denied: ${result.permissionRequestsDenied} -->\n\n`;
+  writeFileSync(
+    plan.outputPath,
+    header + result.text + (result.text.endsWith("\n") ? "" : "\n"),
+    "utf-8",
+  );
+  const relOut = relative(ROOT, plan.outputPath);
+  auditLines.push(
+    `- ${step.id} ${step.name}: OK — ${relOut} written (${statSync(plan.outputPath).size} bytes) via ${result.agent} (${result.command})${fakeTag}`,
+    `  - model: ${result.model}`,
+    `  - stop reason: ${result.stopReason}`,
+    `  - permission requests denied: ${result.permissionRequestsDenied}`,
+    `  - prompt (${plan.templateRel}):`,
+    ...plan.prompt.split("\n").map((l) => `    ${l}`),
+    `  - result (first 2000 chars of ${result.text.length}):`,
+    ...truncateForLog(result.text).split("\n").map((l) => `    ${l}`),
+  );
+}
+
 interface ReviewState {
   workflow: string;
   workflow_path: string;
@@ -609,6 +846,7 @@ function renderChecklist(
   approver: string,
   approvedAt: string,
   pausedAt: string,
+  explanationsNote: string,
 ): string {
   const esc = (s: string): string => s.replace(/\|/g, "\\|");
   const reviewStep = doc.steps.find((s) => s.kind === "human_review");
@@ -631,7 +869,7 @@ function renderChecklist(
   }
   lines.push(
     "",
-    "- explanations.md was not drafted — the agent step was skipped: no ACP agent connected.",
+    `- ${explanationsNote}`,
     "- Statuses are screening results only (pass / review / fail), never an absolute claim of compliance.",
     "- All values are SYNTHETIC examples, not a real regulation or a real parcel.",
   );
@@ -718,7 +956,19 @@ function cmdApprove(target: string): number {
     };
     const approver = safeUsername();
     const approvedAt = new Date().toISOString();
-    const md = renderChecklist(doc, limits.regulation, rows, approver, approvedAt, state.paused_at);
+    // Whether w1-3 drafted explanations (and by which agent) is read
+    // from the explanations file header the runner wrote at run time.
+    let explanationsNote =
+      "explanations.md was not drafted — the agent step was skipped: no ACP agent connected.";
+    const explanationsPath = join(outDir, "explanations.md");
+    if (existsSync(explanationsPath)) {
+      const header = readFileSync(explanationsPath, "utf-8").slice(0, 2000);
+      const agentLine = header.match(/agent: (.+)/)?.[1]?.trim() ?? "unknown agent";
+      // The agent line already carries "[FAKE (test-only)]" when the fake
+      // was used, so no second marker is needed here.
+      explanationsNote = `explanations.md was drafted by ${agentLine} — proposal, reviewed at this step.`;
+    }
+    const md = renderChecklist(doc, limits.regulation, rows, approver, approvedAt, state.paused_at, explanationsNote);
     writeFileSync(checklistPath, md, "utf-8");
     state.status = "approved";
     state.approver = approver;
@@ -741,7 +991,7 @@ function cmdApprove(target: string): number {
   }
 }
 
-function cmdRun(target: string): number {
+async function cmdRun(target: string): Promise<number> {
   const auditLines: string[] = [];
   const auditPath = { value: "" };
   const startedAt = new Date().toISOString();
@@ -820,8 +1070,7 @@ function cmdRun(target: string): number {
 
     for (const step of doc.steps) {
       if (step.kind === "agent") {
-        // Never fake agent output: skip and say so in the audit log.
-        auditLines.push(`- ${step.id} ${step.name}: ${agentSkipNote(step)}`);
+        await runAgentStep(step, { doc, inputPaths, outDir, units, auditLines });
         continue;
       }
       if (step.kind === "human_review") {
@@ -843,7 +1092,7 @@ function cmdRun(target: string): number {
   }
 }
 
-function main(argv: string[]): number {
+async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   if (!cmd || cmd === "--help" || cmd === "-h" || cmd === "help") {
     printHelp();
@@ -852,6 +1101,9 @@ function main(argv: string[]): number {
   if (cmd === "demo") {
     cmdDemo();
     return 0;
+  }
+  if (cmd === "agent") {
+    return cmdAgent(rest);
   }
   if (cmd === "run") {
     const approve = rest.includes("--approve");
@@ -868,4 +1120,10 @@ function main(argv: string[]): number {
   return 2;
 }
 
-process.exit(main(process.argv.slice(2)));
+main(process.argv.slice(2)).then(
+  (code) => process.exit(code),
+  (err) => {
+    console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  },
+);

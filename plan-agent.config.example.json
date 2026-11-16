@@ -1,0 +1,6 @@
+{
+  "agent": {
+    "name": "codex",
+    "command": ["npx", "-y", "@agentclientprotocol/codex-acp"]
+  }
+}

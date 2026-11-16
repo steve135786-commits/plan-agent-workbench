@@ -21,7 +21,7 @@ result, and never silently overwrite a deterministic result.
 | Kind | Meaning | Rules |
 |---|---|---|
 | `deterministic` | Pure computation (parse, convert, calculate, render). No model call. | Must log parameters + formula/projection; must fail loudly on CRS/unit errors, never silently emit numbers |
-| `agent` | An ACP agent step (Codex / Claude Code): draft text, review a diff, propose a fix | Must log model + prompt + result; output is a *proposal* until a human or a deterministic check accepts it |
+| `agent` | An ACP agent step (Codex / Claude Code): draft text, review a diff, propose a fix | Must log model + prompt + result; output is a *proposal* until a human or a deterministic check accepts it. Runs through the ACP client when an agent is configured (docs/acp-client.md); otherwise skipped with an explicit audit entry, never faked |
 | `human_review` | A checkpoint that pauses the run | The run stops here until a human marks pass/fail; used before any compliance verdict is finalised |
 
 ## Naming
@@ -35,7 +35,9 @@ result, and never silently overwrite a deterministic result.
 
 Steps: `w1-1` parse regulation → extract limits with clause/page citations (deterministic);
 `w1-2` compare parcel indicators against limits (deterministic); `w1-3` agent drafts the
-plain-language explanation of each flagged item (agent); `w1-4` human review before the
+plain-language explanation of each flagged item (agent — runs through the ACP client when
+an agent is configured, prompt template `prompts/w1-explanations.md`; skipped with an
+explicit audit entry when none is); `w1-4` human review before the
 checklist is finalised. Verdicts are only `pass` / `review` / `fail` — never "compliant"
 as an absolute claim. Runner behavior: a `human_review` step pauses the run (exit 3)
 after writing the draft outputs; `plan-agent run <workflow> --approve` verifies the
@@ -47,7 +49,9 @@ only then writes the final output.
 Steps: `w2-1` convert DXF→GeoJSON/SHP by layer (wall/window/door/dimension/axis) (deterministic);
 `w2-2` compute indicators — building density, FAR, green ratio, population density,
 kernel density (deterministic, sidecar); `w2-3` agent reviews conversion warnings and
-proposes fixes (agent); `w2-4` write indicator CSV + run log. CRS and units are parameters,
+proposes fixes (agent — runs through the ACP client when an agent is configured, prompt
+template `prompts/w2-review.md`; skipped with an explicit audit entry when none is);
+`w2-4` write indicator CSV + run log. CRS and units are parameters,
 not assumptions: a CRS/unit mismatch is an error, not a warning.
 
 ## W3 — standard map export
